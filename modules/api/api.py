@@ -1,8 +1,11 @@
 import base64
 import io
+import os
+import logging
 import time
 import datetime
 import uvicorn
+import json
 import gradio as gr
 from threading import Lock
 from io import BytesIO
@@ -13,6 +16,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from secrets import compare_digest
+from kafka3 import KafkaConsumer
 
 import modules.shared as shared
 from modules import sd_samplers, deepbooru, sd_hijack, images, scripts, ui, postprocessing
@@ -685,5 +689,31 @@ class Api:
         return MemoryResponse(ram = ram, cuda = cuda)
 
     def launch(self, server_name, port):
-        self.app.include_router(self.router)
-        uvicorn.run(self.app, host=server_name, port=port)
+        # self.app.include_router(self.router)
+        # uvicorn.run(self.app, host=server_name, port=port)
+
+        # init kafka  todo config it
+        kafka_consumer = KafkaConsumer(
+            os.getenv("KAFKA_TOPIC", "sdtest"),
+            group_id=os.getenv("KAFKA_GROUP_ID", "group_1"),
+            bootstrap_servers=os.getenv("KAFKA_SERVERS", "kafka:9092"),
+            value_deserializer=lambda m: json.loads(m.decode('utf-8'))
+        )
+        for msg in kafka_consumer:
+            logging.info(f"recv on request. {msg.value}")
+            data = msg.value
+            try:
+                if data["method"] == "txt2img":
+                    req = StableDiffusionTxt2ImgProcessingAPI()
+                    req.__dict__.update(**msg.value["params"])
+                    rsp = self.text2imgapi(req)
+                    print("==========rsp========", rsp)
+                elif data["method"] == "img2img":
+                    req = StableDiffusionImg2ImgProcessingAPI()
+                    req.__dict__.update(**msg.value["params"])
+                    rsp = self.img2imgapi(req)
+                    print("==========rsp========", rsp)
+                else:
+                    logging.error(f"invalid method. method:{msg.value['method']}")
+            except Exception as e:
+                logging.error("deal request failed. uid:{}, taskId:{}, method:{}, params:{}".format(data["uid"], data["task_id"], data["method"], data["params"]))
