@@ -38,6 +38,7 @@ safetensors = "*"
 psutil = "*"
 rich = "*"
 kafka-python3 = "*"
+cos-python-sdk-v5 = "*"
 
 [dev-packages]
 

@@ -6,6 +6,8 @@ import time
 import datetime
 import uvicorn
 import json
+import pickle
+import signal
 import gradio as gr
 from threading import Lock
 from io import BytesIO
@@ -17,6 +19,9 @@ from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from secrets import compare_digest
 from kafka3 import KafkaConsumer
+from qcloud_cos import CosConfig
+from qcloud_cos import CosS3Client
+import redis
 
 import modules.shared as shared
 from modules import sd_samplers, deepbooru, sd_hijack, images, scripts, ui, postprocessing
@@ -692,28 +697,75 @@ class Api:
         # self.app.include_router(self.router)
         # uvicorn.run(self.app, host=server_name, port=port)
 
-        # init kafka  todo config it
-        kafka_consumer = KafkaConsumer(
-            os.getenv("KAFKA_TOPIC", "sdtest"),
-            group_id=os.getenv("KAFKA_GROUP_ID", "group_1"),
-            bootstrap_servers=os.getenv("KAFKA_SERVERS", "kafka:9092"),
-            value_deserializer=lambda m: json.loads(m.decode('utf-8'))
+        shared.app = self
+
+        # init kafka
+        self.app.state.kafka_consumer = KafkaConsumer(
+            os.getenv("KAFKA_TOPIC"),
+            group_id=os.getenv("KAFKA_GROUP_ID"),
+            bootstrap_servers=os.getenv("KAFKA_SERVERS"),
+            value_deserializer=lambda m: pickle.loads(m)
         )
-        for msg in kafka_consumer:
+
+        # init cos client
+        secret_id = os.environ.get('COS_SECRET_ID')
+        secret_key = os.environ.get('COS_SECRET_KEY')
+        region = os.environ.get('COS_REGION')
+        token = None
+        self.app.state.cos_client = CosS3Client(CosConfig(Region=region, SecretId=secret_id, SecretKey=secret_key, Token=token, Scheme="https"))
+
+        # init redis
+        self.app.state.redis_client = redis.from_url("redis://{}".format(os.getenv("REDIS_SERVER")), encoding="utf-8")
+
+        # init signal
+        def signal_handler(signo, frame):
+            print(f"recv one signal({signo}).")
+            self.app.state.kafka_consumer.close()
+        signal.signal(signal.SIGINT, signal_handler)
+
+        for msg in self.app.state.kafka_consumer:
             logging.info(f"recv on request. {msg.value}")
             data = msg.value
+            shared.uid = data["uid"]
+            redis_key = f"sd_progress:{data['uid']}"
             try:
+                # check and set status
+                if not self.app.state.redis_client.get(redis_key):
+                    logging.info("the task has be canceled. taskId:%d, uid:%d", data["task_id"], data["uid"])
+                    continue
+                self.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"status": "running"}))
+
+                # doing
                 if data["method"] == "txt2img":
                     req = StableDiffusionTxt2ImgProcessingAPI()
                     req.__dict__.update(**msg.value["params"])
                     rsp = self.text2imgapi(req)
-                    print("==========rsp========", rsp)
                 elif data["method"] == "img2img":
                     req = StableDiffusionImg2ImgProcessingAPI()
                     req.__dict__.update(**msg.value["params"])
                     rsp = self.img2imgapi(req)
-                    print("==========rsp========", rsp)
                 else:
                     logging.error(f"invalid method. method:{msg.value['method']}")
+
+                # save result
+                all_images = []
+                # for idx, img in enumerate(rsp.images):
+                #     if idx >= 8: # 最多处理8张图片
+                #         break
+                #     img_data = base64.b64decode(img)
+                #     img_uri = f'/usr/{data["uid"]}/{data["method"]}/{data["task_id"]}-{idx}.png'
+                #     self.app.state.cos_client.put_object(
+                #         Bucket=os.getenv("COS_BUCKET"),
+                #         Body=img_data,
+                #         Key=img_uri,
+                #         EnableMD5=False
+                #     )
+                #     all_images.append(img_uri)
+                logging.info("deal task success. uid:{}, taskId:{}, images:{}", data["uid"], data["task_id"], all_images)
+
+                # update progress
+                self.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"status": "success", "progress": 1.0, "images": all_images}))
             except Exception as e:
                 logging.error("deal request failed. uid:{}, taskId:{}, method:{}, params:{}".format(data["uid"], data["task_id"], data["method"], data["params"]))
+                logging.exception(e)
+                self.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"status": "failed"}))

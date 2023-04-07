@@ -4,6 +4,8 @@ import json
 import os
 import sys
 import time
+import logging
+import pickle
 
 from PIL import Image
 import gradio as gr
@@ -17,6 +19,8 @@ from modules import localization, script_loading, errors, ui_components, shared_
 from modules.paths_internal import models_path, script_path, data_path, sd_configs_path, sd_default_config, sd_model_file, default_sd_model_file, extensions_dir, extensions_builtin_dir
 
 demo = None
+app = None # FastAPI
+uid = 0 # 当前uid
 
 parser = cmd_args.parser
 
@@ -634,7 +638,26 @@ class TotalTQDM:
             self._tqdm = None
 
 
-total_tqdm = TotalTQDM()
+class TotalTQDMV2:
+    def __init__(self):
+        self.lasttime = int(time.time())
+
+    def update(self):
+        nowtime = int(time.time())
+        if nowtime < self.lasttime + 3:
+            return
+        self.lasttime = nowtime
+        redis_key = f"sd_progress:{uid}"
+        progress = (state.job_no*state.sampling_steps+state.sampling_step)*1.0/(state.job_count*state.sampling_steps)
+        app.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"status": "running", "progress": progress}))
+
+    def updateTotal(self, new_total):
+        pass
+
+    def clear(self):
+        pass
+
+total_tqdm = TotalTQDMV2()
 
 mem_mon = modules.memmon.MemUsageMonitor("MemMon", device, opts)
 mem_mon.start()
