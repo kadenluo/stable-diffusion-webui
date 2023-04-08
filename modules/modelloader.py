@@ -38,6 +38,7 @@ def load_models(model_path: str, model_url: str = None, command_path: str = None
 
         places.append(model_path)
 
+        target_model = os.getenv("TARGET_MODEL")
         for place in places:
             if os.path.exists(place):
                 for file in glob.iglob(place + '**/**', recursive=True):
@@ -53,7 +54,7 @@ def load_models(model_path: str, model_url: str = None, command_path: str = None
                         model_name, extension = os.path.splitext(file)
                         if extension not in ext_filter:
                             continue
-                    if file not in output:
+                    if os.path.basename(file) == target_model and file not in output:
                         output.append(full_path)
 
         if model_url is not None and len(output) == 0:
