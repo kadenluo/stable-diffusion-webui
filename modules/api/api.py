@@ -746,21 +746,20 @@ class Api:
                     rsp = self.img2imgapi(req)
                 else:
                     logging.error(f"invalid method. method:{msg.value['method']}")
+                    continue
 
                 # save result
                 all_images = []
-                # for idx, img in enumerate(rsp.images):
-                #     if idx >= 8: # 最多处理8张图片
-                #         break
-                #     img_data = base64.b64decode(img)
-                #     img_uri = f'/usr/{data["uid"]}/{data["method"]}/{data["task_id"]}-{idx}.png'
-                #     self.app.state.cos_client.put_object(
-                #         Bucket=os.getenv("COS_BUCKET"),
-                #         Body=img_data,
-                #         Key=img_uri,
-                #         EnableMD5=False
-                #     )
-                #     all_images.append(img_uri)
+                for idx, img in enumerate(rsp.images):
+                    img_data = base64.b64decode(img)
+                    img_uri = f'/usr/{data["uid"]}/{data["method"]}/{data["task_id"]}-{idx}.png'
+                    self.app.state.cos_client.put_object(
+                        Bucket=os.getenv("COS_BUCKET"),
+                        Body=img_data,
+                        Key=img_uri,
+                        EnableMD5=False
+                    )
+                    all_images.append(img_uri)
                 logging.info("deal task success. uid:{}, taskId:{}, images:{}", data["uid"], data["task_id"], all_images)
 
                 # update progress
