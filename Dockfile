@@ -1,0 +1,18 @@
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+MAINTAINER kadenluo
+
+RUN apt -y update && apt -y upgrade && apt install -y git wget python3 python3-venv python3-pip libgl1 libglib2.0-0  && \
+    pip3 config set global.index-url https://mirrors.aliyun.com/pypi/simple/
+
+
+#ARG WORK_DIR=/root/stable-diffusion-webui
+
+RUN git clone https://github.com/kadenluo/stable-diffusion-webui.git $WORK_DIR && \
+    cd $WORK_DIR && git checkout docker && git submodule update --init
+
+RUN pip3 install -r $WORK_DIR/repositories/CodeFormer/requirements.txt
+RUN pip3 install -r $WORK_DIR/requirements.txt
+
+EXPOSE 7860
+
+CMD ["python3", "webui.py", "--listen", "--deepdanbooru", "--xformers", "--no-half", "--disable-safe-unpickle"]
