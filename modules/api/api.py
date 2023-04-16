@@ -6,6 +6,7 @@ import time
 import datetime
 import uvicorn
 import json
+from urllib.parse import urlparse
 import pickle
 import signal
 import gradio as gr
@@ -65,6 +66,7 @@ def setUpscalers(req: dict):
     return reqDict
 
 def decode_base64_to_image(encoding):
+    print("===fefe=====", type(encoding))
     if encoding.startswith("data:image/"):
         encoding = encoding.split(";")[1].split(",")[1]
     try:
@@ -693,6 +695,25 @@ class Api:
             cuda = { 'error': f'{err}' }
         return MemoryResponse(ram = ram, cuda = cuda)
 
+    def replace_image(self, obj, field):
+        if field not in obj:
+            return
+        if len(obj[field]) == 0:
+            return
+
+        url = urlparse(obj[field])
+        rsp = self.app.state.cos_client.get_object(
+            Bucket=os.getenv("COS_BUCKET"),
+            Key=url.path,
+        )
+        with io.BytesIO() as output_bytes:
+            while True:
+                chunk = rsp['Body'].read()
+                if not chunk:
+                    break
+                output_bytes.write(chunk)
+            obj[field] = base64.b64encode(output_bytes.getvalue()).decode('utf-8')
+
     def launch(self, server_name, port):
         # self.app.include_router(self.router)
         # uvicorn.run(self.app, host=server_name, port=port)
@@ -735,24 +756,32 @@ class Api:
                     continue
                 self.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"status": "running"}))
 
+                params = data["params"]
+                # download image
+                if "alwayson_scripts" in params:
+                    if "ControlNet" in params["alwayson_scripts"] and "args" in params["alwayson_scripts"]["ControlNet"]:
+                        for args in params["alwayson_scripts"]["ControlNet"]["args"]:
+                            self.replace_image(args, "input_image")
+                            self.replace_image(args, "mask")
+
                 # doing
                 if data["method"] == "txt2img":
                     req = StableDiffusionTxt2ImgProcessingAPI()
-                    req.__dict__.update(**msg.value["params"])
+                    req.__dict__.update(**data["params"])
                     rsp = self.text2imgapi(req)
                 elif data["method"] == "img2img":
                     req = StableDiffusionImg2ImgProcessingAPI()
-                    req.__dict__.update(**msg.value["params"])
+                    req.__dict__.update(**data["params"])
                     rsp = self.img2imgapi(req)
                 else:
-                    logging.error(f"invalid method. method:{msg.value['method']}")
+                    logging.error(f"invalid method. method:{data['method']}")
                     continue
 
                 # save result
                 all_images = []
                 for idx, img in enumerate(rsp.images):
                     img_data = base64.b64decode(img)
-                    img_uri = f'/usr/{data["uid"]}/{data["method"]}/{data["task_id"]}-{idx}.png'
+                    img_uri = f'/usr/{data["uid"]}/{data["date"]}/{data["task_id"]}-{idx}.png'
                     self.app.state.cos_client.put_object(
                         Bucket=os.getenv("COS_BUCKET"),
                         Body=img_data,
@@ -765,6 +794,6 @@ class Api:
                 # update progress
                 self.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"status": "success", "progress": 1.0, "images": all_images}))
             except Exception as e:
-                logging.error("deal request failed. uid:{}, taskId:{}, method:{}, params:{}".format(data["uid"], data["task_id"], data["method"], data["params"]))
+                # logging.error("deal request failed. uid:{}, taskId:{}, method:{}, params:{}".format(data["uid"], data["task_id"], data["method"], data["params"]))
                 logging.exception(e)
                 self.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"status": "failed"}))
