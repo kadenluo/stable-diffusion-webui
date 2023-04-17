@@ -66,7 +66,6 @@ def setUpscalers(req: dict):
     return reqDict
 
 def decode_base64_to_image(encoding):
-    print("===fefe=====", type(encoding))
     if encoding.startswith("data:image/"):
         encoding = encoding.split(";")[1].split(",")[1]
     try:
