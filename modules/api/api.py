@@ -35,7 +35,7 @@ from PIL import PngImagePlugin,Image
 from modules.sd_models import checkpoints_list, unload_model_weights, reload_model_weights
 from modules.sd_models_config import find_checkpoint_config_near_filename
 from modules.realesrgan_model import get_realesrgan_models
-from modules import devices
+from modules import devices, timer
 from typing import List
 import piexif
 import piexif.helper
@@ -230,17 +230,17 @@ class Api:
         script_idx = script_name_to_index(script_name, script_runner.selectable_scripts)
         script = script_runner.selectable_scripts[script_idx]
         return script, script_idx
-    
+
     def get_scripts_list(self):
         t2ilist = [str(title.lower()) for title in scripts.scripts_txt2img.titles]
         i2ilist = [str(title.lower()) for title in scripts.scripts_img2img.titles]
 
-        return ScriptsList(txt2img = t2ilist, img2img = i2ilist)  
+        return ScriptsList(txt2img = t2ilist, img2img = i2ilist)
 
     def get_script(self, script_name, script_runner):
         if script_name is None or script_name == "":
             return None, None
-        
+
         script_idx = script_name_to_index(script_name, script_runner.scripts)
         return script_runner.scripts[script_idx]
 
@@ -695,8 +695,13 @@ class Api:
         return MemoryResponse(ram = ram, cuda = cuda)
 
     def replace_image(self, obj, field):
-        if field not in obj:
-            return
+        if isinstance(obj, dict):
+            if field not in obj:
+                return
+        elif isinstance(obj, list):
+            if field >= len(obj) or field < 0:
+                return
+
         if len(obj[field]) == 0:
             return
 
@@ -717,6 +722,8 @@ class Api:
         # self.app.include_router(self.router)
         # uvicorn.run(self.app, host=server_name, port=port)
 
+        logging.basicConfig(level=logging.INFO)
+
         shared.app = self
 
         # init kafka
@@ -724,7 +731,7 @@ class Api:
             os.getenv("KAFKA_TOPIC"),
             group_id=os.getenv("KAFKA_GROUP_ID"),
             bootstrap_servers=os.getenv("KAFKA_SERVERS"),
-            value_deserializer=lambda m: pickle.loads(m)
+            # value_deserializer=lambda m: pickle.loads(m)
         )
 
         # init cos client
@@ -739,16 +746,19 @@ class Api:
 
         # init signal
         def signal_handler(signo, frame):
-            print(f"recv one signal({signo}).")
+            logging.info("recv one signal(%d).", signo)
             self.app.state.kafka_consumer.close()
         signal.signal(signal.SIGINT, signal_handler)
 
         for msg in self.app.state.kafka_consumer:
-            logging.info(f"recv on request. {msg.value}")
-            data = msg.value
-            shared.uid = data["uid"]
-            redis_key = f"sd_progress:{data['uid']}"
             try:
+                running_timer = timer.Timer()
+
+                data = pickle.loads(msg.value)
+                logging.info(f"recv on request. {data}")
+                shared.uid = data["uid"]
+                redis_key = f"sd_progress:{data['uid']}"
+
                 # check and set status
                 if not self.app.state.redis_client.get(redis_key):
                     logging.info("the task has be canceled. taskId:%d, uid:%d", data["task_id"], data["uid"])
@@ -762,6 +772,7 @@ class Api:
                         for args in params["alwayson_scripts"]["ControlNet"]["args"]:
                             self.replace_image(args, "input_image")
                             self.replace_image(args, "mask")
+                        running_timer.record("controlnet")
 
                 # doing
                 if data["method"] == "txt2img":
@@ -769,9 +780,15 @@ class Api:
                     req.__dict__.update(**data["params"])
                     rsp = self.text2imgapi(req)
                 elif data["method"] == "img2img":
+                    if "init_images" in data["params"] and len(data["params"]["init_images"]) > 0:
+                        for idx, image in enumerate(data["params"]["init_images"]):
+                            if len(image) > 0:
+                                self.replace_image(data["params"]["init_images"], idx)
+                    running_timer.record("download")
                     req = StableDiffusionImg2ImgProcessingAPI()
                     req.__dict__.update(**data["params"])
                     rsp = self.img2imgapi(req)
+                    running_timer.record("img2img")
                 else:
                     logging.error(f"invalid method. method:{data['method']}")
                     continue
@@ -788,11 +805,13 @@ class Api:
                         EnableMD5=False
                     )
                     all_images.append(img_uri)
-                logging.info("deal task success. uid:{}, taskId:{}, images:{}", data["uid"], data["task_id"], all_images)
+                running_timer.record("upload")
 
                 # update progress
                 self.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"status": "success", "progress": 1.0, "images": all_images}))
+
+                logging.info("deal task success. uid:%d, taskId:%s, images:%s, summary:%s", data["uid"], data["task_id"], all_images, running_timer.summary())
             except Exception as e:
-                # logging.error("deal request failed. uid:{}, taskId:{}, method:{}, params:{}".format(data["uid"], data["task_id"], data["method"], data["params"]))
                 logging.exception(e)
+                logging.error("deal request failed. uid:%d, taskId:%s, method:%s, params:%s".format(data["uid"], data["task_id"], data["method"], data["params"]))
                 self.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"status": "failed"}))
