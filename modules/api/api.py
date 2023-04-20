@@ -764,6 +764,7 @@ class Api:
                     logging.info("the task has be canceled. taskId:%d, uid:%d", data["task_id"], data["uid"])
                     continue
                 self.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"status": "running"}))
+                running_timer.record("check queue")
 
                 params = data["params"]
                 # download image
@@ -784,7 +785,7 @@ class Api:
                         for idx, image in enumerate(data["params"]["init_images"]):
                             if len(image) > 0:
                                 self.replace_image(data["params"]["init_images"], idx)
-                    running_timer.record("download")
+                        running_timer.record("download")
                     req = StableDiffusionImg2ImgProcessingAPI()
                     req.__dict__.update(**data["params"])
                     rsp = self.img2imgapi(req)

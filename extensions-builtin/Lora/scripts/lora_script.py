@@ -5,6 +5,7 @@ import lora
 import extra_networks_lora
 import ui_extra_networks_lora
 from modules import script_callbacks, ui_extra_networks, extra_networks, shared
+from fastapi import FastAPI
 
 
 def unload():
@@ -17,6 +18,7 @@ def unload():
 
 
 def before_ui():
+    print("=============yes==========")
     ui_extra_networks.register_page(ui_extra_networks_lora.ExtraNetworksPageLora())
     extra_networks.register_extra_network(extra_networks_lora.ExtraNetworkLora())
 
@@ -50,6 +52,12 @@ script_callbacks.on_model_loaded(lora.assign_lora_names_to_compvis_modules)
 script_callbacks.on_script_unloaded(unload)
 script_callbacks.on_before_ui(before_ui)
 
+
+def before_start(_, app: FastAPI):
+    extra_networks.register_extra_network(extra_networks_lora.ExtraNetworkLora())
+
+
+script_callbacks.on_app_started(before_start)
 
 shared.options_templates.update(shared.options_section(('extra_networks', "Extra Networks"), {
     "sd_lora": shared.OptionInfo("None", "Add Lora to prompt", gr.Dropdown, lambda: {"choices": [""] + [x for x in lora.available_loras]}, refresh=lora.list_available_loras),
