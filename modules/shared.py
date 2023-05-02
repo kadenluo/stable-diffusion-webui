@@ -21,6 +21,7 @@ from modules.paths_internal import models_path, script_path, data_path, sd_confi
 demo = None
 app = None # FastAPI
 uid = 0 # 当前uid
+task_id = "" # 当前任务id
 
 parser = cmd_args.parser
 
@@ -649,7 +650,7 @@ class TotalTQDMV2:
         self.lasttime = nowtime
         redis_key = f"sd_progress:{uid}"
         progress = (state.job_no*state.sampling_steps+state.sampling_step)*1.0/(state.job_count*state.sampling_steps)
-        app.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"status": "running", "progress": progress}))
+        app.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"task_id": task_id, "status": "running", "progress": progress}))
 
     def updateTotal(self, new_total):
         pass

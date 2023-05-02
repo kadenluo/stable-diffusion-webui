@@ -758,13 +758,13 @@ class Api:
                 logging.info(f"recv on request. {data}")
                 shared.uid = data["uid"]
                 redis_key = f"sd_progress:{data['uid']}"
-                task_id = data["task_id"]
+                shared.task_id = data["task_id"]
 
                 # check and set status
                 if not self.app.state.redis_client.get(redis_key):
-                    logging.info("the task has be canceled. taskId:%d, uid:%d", task_id, data["uid"])
+                    logging.info("the task has be canceled. taskId:%d, uid:%d", shared.task_id , data["uid"])
                     continue
-                self.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"task_id":task_id, "status": "running"}))
+                self.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"task_id":shared.task_id , "status": "running"}))
                 running_timer.record("check queue")
 
                 params = data["params"]
@@ -810,10 +810,10 @@ class Api:
                 running_timer.record("upload")
 
                 # update progress
-                self.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"task_id":task_id, "status": "success", "progress": 1.0, "images": all_images}))
+                self.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"task_id":shared.task_id , "status": "success", "progress": 1.0, "images": all_images}))
 
-                logging.info("deal task success. uid:%d, taskId:%s, images:%s, summary:%s", data["uid"], task_id, all_images, running_timer.summary())
+                logging.info("deal task success. uid:%d, taskId:%s, images:%s, summary:%s", data["uid"], shared.task_id , all_images, running_timer.summary())
             except Exception as e:
                 logging.exception(e)
-                logging.error("deal request failed. uid:%d, taskId:%s, method:%s, params:%s".format(data["uid"], task_id, data["method"], data["params"]))
-                self.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"task_id":task_id, "status": "failed"}))
+                logging.error("deal request failed. uid:%d, taskId:%s, method:%s, params:%s".format(data["uid"], shared.task_id , data["method"], data["params"]))
+                self.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"task_id":shared.task_id , "status": "failed"}))
