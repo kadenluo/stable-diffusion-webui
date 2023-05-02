@@ -809,7 +809,7 @@ class Api:
                 running_timer.record("upload")
 
                 # update progress
-                self.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"status": "success", "progress": 1.0, "images": all_images}))
+                self.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"task_id":data["task_id"], "status": "success", "progress": 1.0, "images": all_images}))
 
                 logging.info("deal task success. uid:%d, taskId:%s, images:%s, summary:%s", data["uid"], data["task_id"], all_images, running_timer.summary())
             except Exception as e:
