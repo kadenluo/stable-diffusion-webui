@@ -756,15 +756,18 @@ class Api:
 
                 data = pickle.loads(msg.value)
                 logging.info(f"recv on request. {data}")
-                shared.uid = data["uid"]
+                shared.ctx = shared.LogicContext(
+                    uid=data["uid"],
+                    task_id=data["task_id"],
+                    status=shared.SDStatus.Running
+                )
                 redis_key = f"sd_progress:{data['uid']}"
-                shared.task_id = data["task_id"]
 
                 # check and set status
                 if not self.app.state.redis_client.get(redis_key):
-                    logging.info("the task has be canceled. taskId:%d, uid:%d", shared.task_id , data["uid"])
+                    logging.info("the task has be canceled. taskId:%d, uid:%d", shared.ctx.task_id, shared.ctx.uid)
                     continue
-                self.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"task_id":shared.task_id , "status": "running"}))
+                self.app.state.redis_client.setex(redis_key, 60, pickle.dumps(shared.ctx.dict(exclude_unset=True)))
                 running_timer.record("check queue")
 
                 params = data["params"]
@@ -799,7 +802,7 @@ class Api:
                 all_images = []
                 for idx, img in enumerate(rsp.images):
                     img_data = base64.b64decode(img)
-                    img_uri = f'/usr/{data["uid"]}/{data["date"]}/{data["task_id"]}-{idx}.png'
+                    img_uri = f'/usr/{data["uid"]}/{data["date"]}/{shared.ctx.task_id}-{idx}.png'
                     self.app.state.cos_client.put_object(
                         Bucket=os.getenv("COS_BUCKET"),
                         Body=img_data,
@@ -810,10 +813,14 @@ class Api:
                 running_timer.record("upload")
 
                 # update progress
-                self.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"task_id":shared.task_id , "status": "success", "progress": 1.0, "images": all_images}))
+                shared.ctx.status = shared.SDStatus.Success
+                shared.ctx.progress = 1
+                shared.ctx.images = all_images
+                self.app.state.redis_client.setex(redis_key, 60, pickle.dumps(shared.ctx.dict(exclude_unset=True)))
 
-                logging.info("deal task success. uid:%d, taskId:%s, images:%s, summary:%s", data["uid"], shared.task_id , all_images, running_timer.summary())
+                logging.info("deal task success. uid:%d, taskId:%s, images:%s, summary:%s", data["uid"], shared.ctx.task_id , all_images, running_timer.summary())
             except Exception as e:
                 logging.exception(e)
-                logging.error("deal request failed. uid:%d, taskId:%s, method:%s, params:%s".format(data["uid"], shared.task_id , data["method"], data["params"]))
-                self.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"task_id":shared.task_id , "status": "failed"}))
+                shared.ctx.status = shared.SDStatus.Failed
+                logging.error("deal request failed. uid:%d, taskId:%s, method:%s, params:%s".format(shared.ctx.uid, shared.ctx.task_id , data["method"], data["params"]))
+                self.app.state.redis_client.setex(redis_key, 60, pickle.dumps(shared.ctx.dict(exclude_unset=True)))

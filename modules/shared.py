@@ -10,6 +10,9 @@ import pickle
 from PIL import Image
 import gradio as gr
 import tqdm
+from enum import Enum
+from pydantic import BaseModel
+from typing import List, Optional
 
 import modules.interrogate
 import modules.memmon
@@ -20,8 +23,21 @@ from modules.paths_internal import models_path, script_path, data_path, sd_confi
 
 demo = None
 app = None # FastAPI
-uid = 0 # 当前uid
-task_id = "" # 当前任务id
+
+class SDStatus(Enum):
+    Queued = "queued"
+    Running = "running"
+    Success = "success"
+    Failed = "failed"
+
+
+class LogicContext(BaseModel):
+    uid: int
+    task_id: str
+    status: SDStatus
+    progress: float
+    images: Optional[List[str]]
+ctx = None # 逻辑context
 
 parser = cmd_args.parser
 
@@ -648,9 +664,9 @@ class TotalTQDMV2:
         if nowtime < self.lasttime + 3:
             return
         self.lasttime = nowtime
-        redis_key = f"sd_progress:{uid}"
-        progress = (state.job_no*state.sampling_steps+state.sampling_step)*1.0/(state.job_count*state.sampling_steps)
-        app.app.state.redis_client.setex(redis_key, 60, pickle.dumps({"task_id": task_id, "status": "running", "progress": progress}))
+        redis_key = f"sd_progress:{ctx.uid}"
+        ctx.progress = (state.job_no*state.sampling_steps+state.sampling_step)*1.0/(state.job_count*state.sampling_steps)
+        app.app.state.redis_client.setex(redis_key, 60, pickle.dumps(ctx.dict(exclude_unset=True)))
 
     def updateTotal(self, new_total):
         pass
