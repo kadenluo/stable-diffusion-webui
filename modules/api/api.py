@@ -813,14 +813,14 @@ class Api:
                 running_timer.record("upload")
 
                 # update progress
-                shared.ctx.status = shared.SDStatus.Success
                 shared.ctx.progress = 1
                 shared.ctx.images = all_images
+                shared.ctx.status = shared.SDStatus.Success.value
                 self.app.state.redis_client.setex(redis_key, 60, pickle.dumps(shared.ctx.dict(exclude_unset=True)))
 
                 logging.info("deal task success. uid:%d, taskId:%s, images:%s, summary:%s", data["uid"], shared.ctx.task_id , all_images, running_timer.summary())
             except Exception as e:
                 logging.exception(e)
-                shared.ctx.status = shared.SDStatus.Failed
+                shared.ctx.status = shared.SDStatus.Failed.value
                 logging.error("deal request failed. uid:%d, taskId:%s, method:%s, params:%s".format(shared.ctx.uid, shared.ctx.task_id , data["method"], data["params"]))
                 self.app.state.redis_client.setex(redis_key, 60, pickle.dumps(shared.ctx.dict(exclude_unset=True)))

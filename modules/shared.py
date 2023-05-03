@@ -24,7 +24,7 @@ from modules.paths_internal import models_path, script_path, data_path, sd_confi
 demo = None
 app = None # FastAPI
 
-class SDStatus(Enum):
+class SDStatus(str, Enum):
     Queued = "queued"
     Running = "running"
     Success = "success"
@@ -34,8 +34,8 @@ class SDStatus(Enum):
 class LogicContext(BaseModel):
     uid: int
     task_id: str
-    status: SDStatus
-    progress: float
+    status: str
+    progress: Optional[float] = 0
     images: Optional[List[str]]
 ctx = None # 逻辑context
 
