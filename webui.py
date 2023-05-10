@@ -9,6 +9,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from packaging import version
+from kafka3 import KafkaConsumer
+from qcloud_cos import CosConfig
+from qcloud_cos import CosS3Client
+import redis
 
 import logging
 logging.getLogger("xformers").addFilter(lambda record: 'A matching Triton is not available' not in record.getMessage())
@@ -215,12 +219,46 @@ def wait_on_server(demo=None):
             break
 
 
+def init_app(app):
+    app.state.kafka_consumer = KafkaConsumer(
+        os.getenv("KAFKA_TOPIC"),
+        group_id=os.getenv("KAFKA_GROUP_ID"),
+        bootstrap_servers=os.getenv("KAFKA_SERVERS"),
+        # value_deserializer=lambda m: pickle.loads(m)
+    )
+
+    # init cos client
+    secret_id = os.environ.get('COS_SECRET_ID')
+    secret_key = os.environ.get('COS_SECRET_KEY')
+    region = os.environ.get('COS_REGION')
+    token = None
+    app.state.cos_client = CosS3Client(
+        CosConfig(Region=region, SecretId=secret_id, SecretKey=secret_key, Token=token, Scheme="https"))
+
+    # init redis
+    app.state.redis_client = redis.from_url("redis://{}".format(os.getenv("REDIS_SERVER")), encoding="utf-8")
+
+    # init signal
+    def signal_handler(signo, frame):
+        logging.info("recv one signal(%d).", signo)
+        app.state.kafka_consumer.close()
+
+    signal.signal(signal.SIGINT, signal_handler)
+
+
 def api_only():
-    initialize()
+    logging.basicConfig(level=logging.INFO)
 
     app = FastAPI()
     setup_middleware(app)
     api = create_api(app)
+
+    shared.app = app
+    init_app(app)
+    logging.info("init app success.")
+
+    initialize()
+    logging.info("init sd success.")
 
     modules.script_callbacks.app_started_callback(None, app)
 

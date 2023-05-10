@@ -661,12 +661,12 @@ class TotalTQDMV2:
 
     def update(self):
         nowtime = int(time.time())
-        if nowtime < self.lasttime + 3:
+        if nowtime < self.lasttime + 2:
             return
         self.lasttime = nowtime
         redis_key = f"sd_progress:{ctx.uid}"
         ctx.progress = (state.job_no*state.sampling_steps+state.sampling_step)*1.0/(state.job_count*state.sampling_steps)
-        app.app.state.redis_client.setex(redis_key, 60, pickle.dumps(ctx.dict(exclude_unset=True)))
+        app.state.redis_client.setex(redis_key, 60, pickle.dumps(ctx.dict(exclude_unset=True)))
 
     def updateTotal(self, new_total):
         pass

@@ -19,10 +19,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from secrets import compare_digest
-from kafka3 import KafkaConsumer
-from qcloud_cos import CosConfig
-from qcloud_cos import CosS3Client
-import redis
+
 
 import modules.shared as shared
 from modules import sd_samplers, deepbooru, sd_hijack, images, scripts, ui, postprocessing
@@ -722,33 +719,7 @@ class Api:
         # self.app.include_router(self.router)
         # uvicorn.run(self.app, host=server_name, port=port)
 
-        logging.basicConfig(level=logging.INFO)
-
-        shared.app = self
-
-        # init kafka
-        self.app.state.kafka_consumer = KafkaConsumer(
-            os.getenv("KAFKA_TOPIC"),
-            group_id=os.getenv("KAFKA_GROUP_ID"),
-            bootstrap_servers=os.getenv("KAFKA_SERVERS"),
-            # value_deserializer=lambda m: pickle.loads(m)
-        )
-
-        # init cos client
-        secret_id = os.environ.get('COS_SECRET_ID')
-        secret_key = os.environ.get('COS_SECRET_KEY')
-        region = os.environ.get('COS_REGION')
-        token = None
-        self.app.state.cos_client = CosS3Client(CosConfig(Region=region, SecretId=secret_id, SecretKey=secret_key, Token=token, Scheme="https"))
-
-        # init redis
-        self.app.state.redis_client = redis.from_url("redis://{}".format(os.getenv("REDIS_SERVER")), encoding="utf-8")
-
-        # init signal
-        def signal_handler(signo, frame):
-            logging.info("recv one signal(%d).", signo)
-            self.app.state.kafka_consumer.close()
-        signal.signal(signal.SIGINT, signal_handler)
+        logging.info("========<start success>==========")
 
         for msg in self.app.state.kafka_consumer:
             try:
@@ -759,7 +730,8 @@ class Api:
                 shared.ctx = shared.LogicContext(
                     uid=data["uid"],
                     task_id=data["task_id"],
-                    status=shared.SDStatus.Running
+                    status=shared.SDStatus.Running,
+                    images=[],
                 )
                 redis_key = f"sd_progress:{data['uid']}"
 
@@ -799,28 +771,27 @@ class Api:
                     continue
 
                 # save result
-                all_images = []
-                for idx, img in enumerate(rsp.images):
-                    img_data = base64.b64decode(img)
-                    img_uri = f'/usr/{data["uid"]}/{data["date"]}/{shared.ctx.task_id}-{idx}.png'
-                    self.app.state.cos_client.put_object(
-                        Bucket=os.getenv("COS_BUCKET"),
-                        Body=img_data,
-                        Key=img_uri,
-                        EnableMD5=False
-                    )
-                    all_images.append(img_uri)
-                running_timer.record("upload")
+                # all_images = []
+                # for idx, img in enumerate(rsp.images):
+                #     img_data = base64.b64decode(img)
+                #     img_uri = f'/usr/{data["uid"]}/{data["date"]}/{shared.ctx.task_id}-{idx}.png'
+                #     self.app.state.cos_client.put_object(
+                #         Bucket=os.getenv("COS_BUCKET"),
+                #         Body=img_data,
+                #         Key=img_uri,
+                #         EnableMD5=False
+                #     )
+                #     all_images.append(img_uri)
+                # running_timer.record("upload")
 
                 # update progress
                 shared.ctx.progress = 1
-                shared.ctx.images = all_images
                 shared.ctx.status = shared.SDStatus.Success.value
                 self.app.state.redis_client.setex(redis_key, 60, pickle.dumps(shared.ctx.dict(exclude_unset=True)))
 
-                logging.info("deal task success. uid:%d, taskId:%s, images:%s, summary:%s", data["uid"], shared.ctx.task_id , all_images, running_timer.summary())
+                logging.info("deal task success. uid:%d, taskId:%s, images:%s, summary:%s", data["uid"], shared.ctx.task_id, shared.ctx.images, running_timer.summary())
             except Exception as e:
                 logging.exception(e)
                 shared.ctx.status = shared.SDStatus.Failed.value
-                logging.error("deal request failed. uid:%d, taskId:%s, method:%s, params:%s".format(shared.ctx.uid, shared.ctx.task_id , data["method"], data["params"]))
+                logging.error("deal request failed. uid:%d, taskId:%s, method:%s, params:%s", shared.ctx.uid, shared.ctx.task_id, data["method"], data["params"])
                 self.app.state.redis_client.setex(redis_key, 60, pickle.dumps(shared.ctx.dict(exclude_unset=True)))
