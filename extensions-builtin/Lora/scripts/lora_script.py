@@ -60,5 +60,5 @@ def before_start(_, app: FastAPI):
 script_callbacks.on_app_started(before_start)
 
 shared.options_templates.update(shared.options_section(('extra_networks', "Extra Networks"), {
-    "sd_lora": shared.OptionInfo("None", "Add Lora to prompt", gr.Dropdown, lambda: {"choices": [""] + [x for x in lora.available_loras]}, refresh=lora.list_available_loras),
+    "sd_lora": shared.OptionInfo("None", "Add Lora to prompt", gr.Dropdown, lambda: {"choices": ["None"] + [x for x in lora.available_loras]}, refresh=lora.list_available_loras),
 }))
