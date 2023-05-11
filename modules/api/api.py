@@ -756,6 +756,7 @@ class Api:
                     req = StableDiffusionTxt2ImgProcessingAPI()
                     req.__dict__.update(**data["params"])
                     rsp = self.text2imgapi(req)
+                    running_timer.record("txt2img")
                 elif data["method"] == "img2img":
                     if "init_images" in data["params"] and len(data["params"]["init_images"]) > 0:
                         for idx, image in enumerate(data["params"]["init_images"]):
