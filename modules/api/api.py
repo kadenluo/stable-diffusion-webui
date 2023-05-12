@@ -733,7 +733,7 @@ class Api:
 
                 # check and set status
                 if not self.app.state.redis_client.get(redis_key):
-                    logging.info("the task has be canceled. taskId:%d, uid:%d", shared.ctx.task_id, shared.ctx.uid)
+                    logging.info("the task has be canceled. taskId:%s, uid:%d", shared.ctx.task_id, shared.ctx.uid)
                     continue
                 self.app.state.redis_client.setex(redis_key, 60, pickle.dumps(shared.ctx.dict(exclude_unset=True)))
                 running_timer.record("check queue")
@@ -790,5 +790,5 @@ class Api:
             except Exception as e:
                 logging.exception(e)
                 shared.ctx.status = shared.SDStatus.Failed.value
-                logging.error("deal request failed. uid:%d, taskId:%s, method:%s, params:%s", shared.ctx.uid, shared.ctx.task_id, data["method"], data["params"])
+                logging.error("deal request failed. uid:%d, taskId:%s, method:%s", shared.ctx.uid, shared.ctx.task_id, data["method"])
                 self.app.state.redis_client.setex(redis_key, 60, pickle.dumps(shared.ctx.dict(exclude_unset=True)))
