@@ -32,9 +32,6 @@ class SDStatus(str, Enum):
     Success = "success"
     Failed = "failed"
 
-    def __repr__(self):
-        return self.value
-
 
 class LogicContext(BaseModel):
     uid: int
@@ -43,6 +40,8 @@ class LogicContext(BaseModel):
     status: SDStatus
     progress: Optional[float] = 0
     images: Optional[List[str]]
+    class Config:
+        use_enum_values = True
 ctx = None # �߼�context
 
 parser = cmd_args.parser
@@ -758,8 +757,8 @@ class TotalTQDMV2:
         ctx.progress = (state.job_no*state.sampling_steps+state.sampling_step)*1.0/(state.job_count*state.sampling_steps)
         app.state.redis_client.setex(redis_key, 60, pickle.dumps(ctx.dict(exclude_unset=True)))
         if self.last_job_no != state.job_no:
-            self.last_job_no = state
-            state.set_current_image()
+            self.last_job_no = state.job_no
+            state.do_set_current_image()
             if state.current_image:
                 uploadImageToCos(state.current_image)
 
