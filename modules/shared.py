@@ -32,6 +32,9 @@ class SDStatus(str, Enum):
     Success = "success"
     Failed = "failed"
 
+    def __repr__(self):
+        return self.value
+
 
 class LogicContext(BaseModel):
     uid: int
@@ -730,7 +733,7 @@ def uploadImageToCos(image):
         data = output_bytes.getvalue()
 
     idx = len(ctx.images) + 1
-    cur_time = datetime.now()
+    cur_time = datetime.datetime.now()
     uri = f'/usr/{ctx.uid}/{cur_time.year:04}{cur_time.month:02}{cur_time.day:02}/{ctx.task_id}-{idx}.png'
     app.state.cos_client.put_object(
         Bucket=os.getenv("COS_BUCKET"),
