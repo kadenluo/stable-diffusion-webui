@@ -5,9 +5,11 @@ import os
 import sys
 import time
 import requests
-import logging
 import pickle
-from PIL import Image
+import io
+import piexif
+from PIL import PngImagePlugin, Image
+from fastapi.exceptions import HTTPException
 import gradio as gr
 import tqdm
 from enum import Enum
@@ -38,7 +40,7 @@ class LogicContext(BaseModel):
     status: SDStatus
     progress: Optional[float] = 0
     images: Optional[List[str]]
-ctx = None # Âß¼­context
+ctx = None # ï¿½ß¼ï¿½context
 
 parser = cmd_args.parser
 
@@ -699,9 +701,50 @@ class TotalTQDM:
             self._tqdm = None
 
 
+def uploadImageToCos(image):
+    with io.BytesIO() as output_bytes:
+        if opts.samples_format.lower() == 'png':
+            use_metadata = False
+            metadata = PngImagePlugin.PngInfo()
+            for key, value in image.info.items():
+                if isinstance(key, str) and isinstance(value, str):
+                    metadata.add_text(key, value)
+                    use_metadata = True
+            image.save(output_bytes, format="PNG", pnginfo=(metadata if use_metadata else None),
+                       quality=opts.jpeg_quality)
+
+        elif opts.samples_format.lower() in ("jpg", "jpeg", "webp"):
+            parameters = image.info.get('parameters', None)
+            exif_bytes = piexif.dump({
+                "Exif": {
+                    piexif.ExifIFD.UserComment: piexif.helper.UserComment.dump(parameters or "", encoding="unicode")}
+            })
+            if opts.samples_format.lower() in ("jpg", "jpeg"):
+                image.save(output_bytes, format="JPEG", exif=exif_bytes, quality=opts.jpeg_quality)
+            else:
+                image.save(output_bytes, format="WEBP", exif=exif_bytes, quality=opts.jpeg_quality)
+
+        else:
+            raise HTTPException(status_code=500, detail="Invalid image format")
+
+        data = output_bytes.getvalue()
+
+    idx = len(ctx.images) + 1
+    cur_time = datetime.now()
+    uri = f'/usr/{ctx.uid}/{cur_time.year:04}{cur_time.month:02}{cur_time.day:02}/{ctx.task_id}-{idx}.png'
+    app.state.cos_client.put_object(
+        Bucket=os.getenv("COS_BUCKET"),
+        Body=data,
+        Key=uri,
+        EnableMD5=False
+    )
+    ctx.images.append(uri)
+    return uri
+
 class TotalTQDMV2:
     def __init__(self):
         self.lasttime = int(time.time())
+        self.last_job_no = 0
 
     def update(self):
         nowtime = int(time.time())
@@ -711,6 +754,11 @@ class TotalTQDMV2:
         redis_key = f"sd_progress:{ctx.uid}"
         ctx.progress = (state.job_no*state.sampling_steps+state.sampling_step)*1.0/(state.job_count*state.sampling_steps)
         app.state.redis_client.setex(redis_key, 60, pickle.dumps(ctx.dict(exclude_unset=True)))
+        if self.last_job_no != state.job_no:
+            self.last_job_no = state
+            state.set_current_image()
+            if state.current_image:
+                uploadImageToCos(state.current_image)
 
     def updateTotal(self, new_total):
         pass

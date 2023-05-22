@@ -32,11 +32,6 @@ from ldm.models.diffusion.ddpm import LatentDepth2ImageDiffusion
 from einops import repeat, rearrange
 from blendmodes.blend import blendLayers, BlendType
 
-import io
-import piexif
-from PIL import PngImagePlugin
-from fastapi.exceptions import HTTPException
-
 # some of those options should not be changed at all because they would break the model, so I removed them from options.
 opt_C = 4
 opt_f = 8
@@ -532,47 +527,6 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
     return res
 
 
-def uploadImageToCos(image):
-    with io.BytesIO() as output_bytes:
-        if opts.samples_format.lower() == 'png':
-            use_metadata = False
-            metadata = PngImagePlugin.PngInfo()
-            for key, value in image.info.items():
-                if isinstance(key, str) and isinstance(value, str):
-                    metadata.add_text(key, value)
-                    use_metadata = True
-            image.save(output_bytes, format="PNG", pnginfo=(metadata if use_metadata else None),
-                       quality=opts.jpeg_quality)
-
-        elif opts.samples_format.lower() in ("jpg", "jpeg", "webp"):
-            parameters = image.info.get('parameters', None)
-            exif_bytes = piexif.dump({
-                "Exif": {
-                    piexif.ExifIFD.UserComment: piexif.helper.UserComment.dump(parameters or "", encoding="unicode")}
-            })
-            if opts.samples_format.lower() in ("jpg", "jpeg"):
-                image.save(output_bytes, format="JPEG", exif=exif_bytes, quality=opts.jpeg_quality)
-            else:
-                image.save(output_bytes, format="WEBP", exif=exif_bytes, quality=opts.jpeg_quality)
-
-        else:
-            raise HTTPException(status_code=500, detail="Invalid image format")
-
-        data = output_bytes.getvalue()
-
-    idx = len(shared.ctx.images) + 1
-    cur_time = datetime.now()
-    uri = f'/usr/{shared.ctx.uid}/{cur_time.year:04}{cur_time.month:02}{cur_time.day:02}/{shared.ctx.task_id}-{idx}.png'
-    shared.app.state.cos_client.put_object(
-        Bucket=os.getenv("COS_BUCKET"),
-        Body=data,
-        Key=uri,
-        EnableMD5=False
-    )
-    shared.ctx.images.append(uri)
-    return uri
-
-
 def process_images_inner(p: StableDiffusionProcessing) -> Processed:
     """this is the main loop that both txt2img and img2img use; it calls func_init once inside all the scopes and func_sample once per batch"""
 
@@ -769,7 +723,7 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
                 infotexts.append(text)
                 if opts.enable_pnginfo:
                     image.info["parameters"] = text
-                uploadImageToCos(image)
+                # uploadImageToCos(image)
                 output_images.append(image)
 
                 if hasattr(p, 'mask_for_overlay') and p.mask_for_overlay and any([opts.save_mask, opts.save_mask_composite, opts.return_mask, opts.return_mask_composite]):
@@ -783,11 +737,11 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
                         images.save_image(image_mask_composite, p.outpath_samples, "", seeds[i], prompts[i], opts.samples_format, info=infotext(n, i), p=p, suffix="-mask-composite")
 
                     if opts.return_mask:
-                        uploadImageToCos(image_mask)
+                        # uploadImageToCos(image_mask)
                         output_images.append(image_mask)
 
                     if opts.return_mask_composite:
-                        uploadImageToCos(image_mask_composite)
+                        # uploadImageToCos(image_mask_composite)
                         output_images.append(image_mask_composite)
 
             del x_samples_ddim
@@ -808,7 +762,7 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
                 infotexts.insert(0, text)
                 if opts.enable_pnginfo:
                     grid.info["parameters"] = text
-                uploadImageToCos(grid)
+                # uploadImageToCos(grid)
                 output_images.insert(0, grid)
                 index_of_first_image = 1
 
