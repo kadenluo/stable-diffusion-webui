@@ -35,6 +35,7 @@ class LogicContext(BaseModel):
     uid: int
     task_id: str
     status: str
+    status: SDStatus
     progress: Optional[float] = 0
     images: Optional[List[str]]
 ctx = None # Âß¼­context
