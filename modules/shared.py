@@ -42,7 +42,9 @@ class LogicContext(BaseModel):
     images: Optional[List[str]]
     class Config:
         use_enum_values = True
-ctx = None # �߼�context
+
+ctx = None
+need_upload_image = True
 
 parser = cmd_args.parser
 
@@ -704,6 +706,8 @@ class TotalTQDM:
 
 
 def uploadImageToCos(image):
+    if not need_upload_image:
+        return
     with io.BytesIO() as output_bytes:
         if opts.samples_format.lower() == 'png':
             use_metadata = False
@@ -743,10 +747,10 @@ def uploadImageToCos(image):
     ctx.images.append(uri)
     return uri
 
+
 class TotalTQDMV2:
     def __init__(self):
         self.lasttime = int(time.time())
-        self.last_job_no = 0
 
     def update(self):
         nowtime = int(time.time())
@@ -756,11 +760,6 @@ class TotalTQDMV2:
         redis_key = f"sd_progress:{ctx.uid}"
         ctx.progress = (state.job_no*state.sampling_steps+state.sampling_step)*1.0/(state.job_count*state.sampling_steps)
         app.state.redis_client.setex(redis_key, 60, pickle.dumps(ctx.dict(exclude_unset=True)))
-        if self.last_job_no != state.job_no:
-            self.last_job_no = state.job_no
-            state.do_set_current_image()
-            if state.current_image:
-                uploadImageToCos(state.current_image)
 
     def updateTotal(self, new_total):
         pass

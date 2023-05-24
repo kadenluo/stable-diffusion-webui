@@ -1,5 +1,5 @@
 import math
-
+import pickle
 import modules.scripts as scripts
 import gradio as gr
 from PIL import Image
@@ -66,35 +66,48 @@ class Script(scripts.Script):
         print(f"SD upscaling will process a total of {len(work)} images tiled as {len(grid.tiles[0][2])}x{len(grid.tiles)} per upscale in a total of {state.job_count} batches.")
 
         result_images = []
-        for n in range(upscale_count):
-            start_seed = seed + n
-            p.seed = start_seed
+        shared.need_upload_image = False
+        try:
+            for n in range(upscale_count):
+                start_seed = seed + n
+                p.seed = start_seed
 
-            work_results = []
-            for i in range(batch_count):
-                p.batch_size = batch_size
-                p.init_images = work[i * batch_size:(i + 1) * batch_size]
+                work_results = []
+                for i in range(batch_count):
+                    p.batch_size = batch_size
+                    p.init_images = work[i * batch_size:(i + 1) * batch_size]
 
-                state.job = f"Batch {i + 1 + n * batch_count} out of {state.job_count}"
-                processed = processing.process_images(p)
+                    state.job = f"Batch {i + 1 + n * batch_count} out of {state.job_count}"
+                    processed = processing.process_images(p)
 
-                if initial_info is None:
-                    initial_info = processed.info
+                    if initial_info is None:
+                        initial_info = processed.info
 
-                p.seed = processed.seed + 1
-                work_results += processed.images
+                    p.seed = processed.seed + 1
+                    work_results += processed.images
 
-            image_index = 0
-            for y, h, row in grid.tiles:
-                for tiledata in row:
-                    tiledata[2] = work_results[image_index] if image_index < len(work_results) else Image.new("RGB", (p.width, p.height))
-                    image_index += 1
+                image_index = 0
+                for y, h, row in grid.tiles:
+                    for tiledata in row:
+                        tiledata[2] = work_results[image_index] if image_index < len(work_results) else Image.new("RGB", (p.width, p.height))
+                        image_index += 1
 
-            combined_image = images.combine_grid(grid)
-            result_images.append(combined_image)
+                combined_image = images.combine_grid(grid)
+                result_images.append(combined_image)
 
-            if opts.samples_save:
-                images.save_image(combined_image, p.outpath_samples, "", start_seed, p.prompt, opts.samples_format, info=initial_info, p=p)
+                # 上传结果图片并更新进度
+                shared.uploadImageToCos(combined_image)
+                redis_key = f"sd_progress:{shared.ctx.uid}"
+                shared.ctx.progress = n*1.0/upscale_count
+                shared.app.state.redis_client.setex(redis_key, 60, pickle.dumps(shared.ctx.dict(exclude_unset=True)))
+
+                if opts.samples_save:
+                    images.save_image(combined_image, p.outpath_samples, "", start_seed, p.prompt, opts.samples_format, info=initial_info, p=p)
+        except Exception as ex:
+            import traceback, sys
+            print(traceback.format_exc(), file=sys.stderr)
+        finally:
+            shared.need_upload_image = True
 
         processed = Processed(p, result_images, seed, initial_info)
 

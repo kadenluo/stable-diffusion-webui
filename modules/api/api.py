@@ -748,6 +748,7 @@ class Api:
                         running_timer.record("controlnet")
 
                 # doing
+                shared.need_upload_image = True
                 if data["method"] == "txt2img":
                     req = StableDiffusionTxt2ImgProcessingAPI()
                     req.__dict__.update(**data["params"])
@@ -768,22 +769,22 @@ class Api:
                     continue
 
                 # save result
-                all_images = []
-                for idx, img in enumerate(rsp.images):
-                    img_data = base64.b64decode(img)
-                    img_uri = f'/usr/{data["uid"]}/{data["date"]}/{shared.ctx.task_id}-{idx}.png'
-                    self.app.state.cos_client.put_object(
-                        Bucket=os.getenv("COS_BUCKET"),
-                        Body=img_data,
-                        Key=img_uri,
-                        EnableMD5=False
-                    )
-                    all_images.append(img_uri)
-                running_timer.record("upload")
+                # all_images = []
+                # for idx, img in enumerate(rsp.images):
+                #     img_data = base64.b64decode(img)
+                #     img_uri = f'/usr/{data["uid"]}/{data["date"]}/{shared.ctx.task_id}-{idx}.png'
+                #     self.app.state.cos_client.put_object(
+                #         Bucket=os.getenv("COS_BUCKET"),
+                #         Body=img_data,
+                #         Key=img_uri,
+                #         EnableMD5=False
+                #     )
+                #     all_images.append(img_uri)
+                # running_timer.record("upload")
 
                 # update progress
                 shared.ctx.progress = 1
-                shared.ctx.images = all_images
+                # shared.ctx.images = all_images
                 shared.ctx.status = shared.SDStatus.Success.value
                 self.app.state.redis_client.setex(redis_key, 60, pickle.dumps(shared.ctx.dict(exclude_unset=True)))
 

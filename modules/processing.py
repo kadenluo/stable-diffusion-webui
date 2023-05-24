@@ -723,7 +723,7 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
                 infotexts.append(text)
                 if opts.enable_pnginfo:
                     image.info["parameters"] = text
-                # uploadImageToCos(image)
+                shared.uploadImageToCos(image)
                 output_images.append(image)
 
                 if hasattr(p, 'mask_for_overlay') and p.mask_for_overlay and any([opts.save_mask, opts.save_mask_composite, opts.return_mask, opts.return_mask_composite]):
@@ -737,11 +737,11 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
                         images.save_image(image_mask_composite, p.outpath_samples, "", seeds[i], prompts[i], opts.samples_format, info=infotext(n, i), p=p, suffix="-mask-composite")
 
                     if opts.return_mask:
-                        # uploadImageToCos(image_mask)
+                        shared.uploadImageToCos(image_mask)
                         output_images.append(image_mask)
 
                     if opts.return_mask_composite:
-                        # uploadImageToCos(image_mask_composite)
+                        shared.uploadImageToCos(image_mask_composite)
                         output_images.append(image_mask_composite)
 
             del x_samples_ddim
@@ -762,7 +762,7 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
                 infotexts.insert(0, text)
                 if opts.enable_pnginfo:
                     grid.info["parameters"] = text
-                # uploadImageToCos(grid)
+                shared.uploadImageToCos(grid)
                 output_images.insert(0, grid)
                 index_of_first_image = 1
 
