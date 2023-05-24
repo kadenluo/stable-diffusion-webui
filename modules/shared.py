@@ -706,8 +706,6 @@ class TotalTQDM:
 
 
 def uploadImageToCos(image):
-    if not need_upload_image:
-        return
     with io.BytesIO() as output_bytes:
         if opts.samples_format.lower() == 'png':
             use_metadata = False
