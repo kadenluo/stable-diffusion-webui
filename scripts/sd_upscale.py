@@ -66,7 +66,6 @@ class Script(scripts.Script):
         print(f"SD upscaling will process a total of {len(work)} images tiled as {len(grid.tiles[0][2])}x{len(grid.tiles)} per upscale in a total of {state.job_count} batches.")
 
         result_images = []
-        shared.need_upload_image = False
         try:
             for n in range(upscale_count):
                 start_seed = seed + n
@@ -78,6 +77,7 @@ class Script(scripts.Script):
                     p.init_images = work[i * batch_size:(i + 1) * batch_size]
 
                     state.job = f"Batch {i + 1 + n * batch_count} out of {state.job_count}"
+                    shared.need_upload_image = False
                     processed = processing.process_images(p)
 
                     if initial_info is None:
@@ -93,9 +93,11 @@ class Script(scripts.Script):
                         image_index += 1
 
                 combined_image = images.combine_grid(grid)
+                combined_image.info = work_results[0].info
                 result_images.append(combined_image)
 
                 # 上传结果图片并更新进度
+                shared.need_upload_image = True
                 shared.uploadImageToCos(combined_image)
                 redis_key = f"sd_progress:{shared.ctx.uid}"
                 shared.ctx.progress = n*1.0/upscale_count

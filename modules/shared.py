@@ -706,6 +706,9 @@ class TotalTQDM:
 
 
 def uploadImageToCos(image):
+    if not need_upload_image:
+        return
+
     with io.BytesIO() as output_bytes:
         if opts.samples_format.lower() == 'png':
             use_metadata = False
@@ -714,8 +717,7 @@ def uploadImageToCos(image):
                 if isinstance(key, str) and isinstance(value, str):
                     metadata.add_text(key, value)
                     use_metadata = True
-            image.save(output_bytes, format="PNG", pnginfo=(metadata if use_metadata else None),
-                       quality=opts.jpeg_quality)
+            image.save(output_bytes, format="PNG", pnginfo=(metadata if use_metadata else None), quality=opts.jpeg_quality)
 
         elif opts.samples_format.lower() in ("jpg", "jpeg", "webp"):
             parameters = image.info.get('parameters', None)
@@ -735,13 +737,13 @@ def uploadImageToCos(image):
 
     idx = len(ctx.images) + 1
     cur_time = datetime.datetime.now()
-    uri = f'/usr/{ctx.uid}/{cur_time.year:04}{cur_time.month:02}{cur_time.day:02}/{ctx.task_id}-{idx}.png'
-    app.state.cos_client.put_object(
-        Bucket=os.getenv("COS_BUCKET"),
-        Body=data,
-        Key=uri,
-        EnableMD5=False
-    )
+    uri = f'/usr/{ctx.uid}/{cur_time.year:04}{cur_time.month:02}{cur_time.day:02}/{ctx.task_id}/{idx}.png'
+    # app.state.cos_client.put_object(
+    #     Bucket=os.getenv("COS_BUCKET"),
+    #     Body=data,
+    #     Key=uri,
+    #     EnableMD5=False
+    # )
     ctx.images.append(uri)
     return uri
 
