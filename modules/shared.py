@@ -738,12 +738,12 @@ def uploadImageToCos(image):
     idx = len(ctx.images) + 1
     cur_time = datetime.datetime.now()
     uri = f'/usr/{ctx.uid}/{cur_time.year:04}{cur_time.month:02}{cur_time.day:02}/{ctx.task_id}/{idx}.png'
-    # app.state.cos_client.put_object(
-    #     Bucket=os.getenv("COS_BUCKET"),
-    #     Body=data,
-    #     Key=uri,
-    #     EnableMD5=False
-    # )
+    app.state.cos_client.put_object(
+        Bucket=os.getenv("COS_BUCKET"),
+        Body=data,
+        Key=uri,
+        EnableMD5=False
+    )
     ctx.images.append(uri)
     return uri
 
